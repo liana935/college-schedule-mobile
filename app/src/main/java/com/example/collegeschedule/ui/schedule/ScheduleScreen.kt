@@ -1,12 +1,16 @@
 package com.example.collegeschedule.ui.schedule
 
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import com.example.collegeschedule.data.dto.ScheduleByDateDto
 import com.example.collegeschedule.data.dto.GroupDto
 import com.example.collegeschedule.data.network.RetrofitInstance
 import com.example.collegeschedule.utils.getWeekDateRange
+import com.example.collegeschedule.ui.schedule.ScheduleList
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -50,54 +54,101 @@ fun ScheduleScreen() {
         allGroups.filter { it.groupName.contains(searchText, ignoreCase = true) }
     }
 
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
     ) {
-        TextField(
-            value = searchText,
-            onValueChange = {
-                searchText = it
-                if (!expanded) expanded = true
-            },
-            label = { Text("Поиск группы") },
-            modifier = Modifier.menuAnchor()
-        )
-
-        DropdownMenu(
+        // Выпадающий список с группами
+        ExposedDropdownMenuBox(
             expanded = expanded,
-            onDismissRequest = { expanded = false }
+            onExpandedChange = { expanded = !expanded }
         ) {
-            if (filteredGroups.isEmpty()) {
-                DropdownMenuItem(
-                    text = { Text("Группа не найдена") },
-                    onClick = { }
-                )
-            } else {
-                filteredGroups.forEach { group ->
+            TextField(
+                value = searchText,
+                onValueChange = {
+                    searchText = it
+                    if (!expanded) expanded = true
+                },
+                label = { Text("Поиск группы") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (filteredGroups.isEmpty()) {
                     DropdownMenuItem(
-                        text = { Text(group.groupName) },
-                        onClick = {
-                            selectedGroup = group.groupName
-                            searchText = group.groupName
-                            expanded = false
-                        }
+                        text = { Text("Группа не найдена") },
+                        onClick = { }
                     )
+                } else {
+                    filteredGroups.forEach { group ->
+                        DropdownMenuItem(
+                            text = { Text(group.groupName) },
+                            onClick = {
+                                selectedGroup = group.groupName
+                                searchText = group.groupName
+                                expanded = false
+                            }
+                        )
+                    }
                 }
             }
         }
-    }
 
-    // Показываем выбранную группу
-    if (selectedGroup.isNotBlank()) {
-        Text("Выбрана группа: $selectedGroup")
-    }
+        Spacer(modifier = Modifier.height(16.dp))
 
-    when {
-        loading -> CircularProgressIndicator()
-        error != null -> Text("Ошибка: $error")
-        selectedGroup.isBlank() -> Text("Выберите группу из списка")
-        schedule.isEmpty() -> Text("Расписание не найдено")
-        else -> ScheduleList(schedule)
+        // Показываем выбранную группу
+        if (selectedGroup.isNotBlank()) {
+            Text(
+                text = "Выбрана группа: $selectedGroup",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // Отображение состояния
+        when {
+            loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+            error != null -> {
+                Text(
+                    text = "Ошибка: $error",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            selectedGroup.isBlank() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Выберите группу из списка выше")
+                }
+            }
+            schedule.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Расписание не найдено")
+                }
+            }
+            else -> {
+                // Добавляем скроллинг
+                ScheduleList(schedule)
+            }
+        }
     }
 }
