@@ -15,6 +15,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,17 +24,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
-import com.example.collegeschedule.data.api.ScheduleApi
-import com.example.collegeschedule.data.repository.ScheduleRepository
+import com.example.collegeschedule.data.dto.GroupDto
+import com.example.collegeschedule.data.local.FavoritesManager
+import com.example.collegeschedule.data.network.RetrofitInstance
+import com.example.collegeschedule.ui.favorites.FavoritesScreen
 import com.example.collegeschedule.ui.schedule.ScheduleScreen
 import com.example.collegeschedule.ui.theme.CollegeScheduleTheme
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Инициализируем менеджер избранного
+        FavoritesManager.init(this)
+
         setContent {
             CollegeScheduleTheme {
                 CollegeScheduleApp()
@@ -46,17 +51,19 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CollegeScheduleApp() {
     var currentDestination by rememberSaveable {
-        mutableStateOf(AppDestinations.HOME) }
-
-    val retrofit = remember {
-        Retrofit.Builder()
-            .baseUrl("http://10.0.2.2:5164/") // localhost для Android Emulator
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
+        mutableStateOf(AppDestinations.HOME)
     }
+    var allGroups by remember { mutableStateOf<List<GroupDto>>(emptyList()) }
 
-    val api = remember { retrofit.create(ScheduleApi::class.java) }
-    val repository = remember { ScheduleRepository(api) }
+    var selectedGroup by remember { mutableStateOf<GroupDto?>(null) }
+
+    // Загружаем группы при старте
+    LaunchedEffect(Unit) {
+        try {
+            allGroups = RetrofitInstance.api.getAllGroups()
+        } catch (e: Exception) {
+        }
+    }
 
     NavigationSuiteScaffold(
         navigationSuiteItems = {
@@ -77,13 +84,30 @@ fun CollegeScheduleApp() {
     ) {
         Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
             when (currentDestination) {
-                AppDestinations.HOME -> ScheduleScreen()
-                AppDestinations.FAVORITES ->
-                    Text("Избранные группы", modifier =
-                        Modifier.padding(innerPadding))
-                AppDestinations.PROFILE ->
-                    Text("Профиль студента", modifier =
-                        Modifier.padding(innerPadding))
+                AppDestinations.HOME -> ScheduleScreen(
+                    // ПЕРЕДАЕМ выбранную группу
+                    selectedGroup = selectedGroup,
+                    // И КОЛБЭК для обновления
+                    onGroupSelected = { group ->
+                        selectedGroup = group
+                    },
+                    modifier = Modifier.padding(innerPadding)
+                )
+                AppDestinations.FAVORITES -> FavoritesScreen(
+                    allGroups = allGroups,
+                    onGroupClick = { group ->
+                        // ПРИ КЛИКЕ НА ГРУППУ В ИЗБРАННОМ:
+                        // 1. Запоминаем группу
+                        selectedGroup = group
+                        // 2. Переключаемся на главный экран
+                        currentDestination = AppDestinations.HOME
+                    },
+                    modifier = Modifier.padding(innerPadding)
+                )
+                AppDestinations.PROFILE -> Text(
+                    "Профиль студента",
+                    modifier = Modifier.padding(innerPadding)
+                )
             }
         }
     }

@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import com.example.collegeschedule.data.dto.GroupDto
 
 @OptIn(ExperimentalMaterial3Api::class)

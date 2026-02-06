@@ -1,121 +1,149 @@
 package com.example.collegeschedule.ui.schedule
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.collegeschedule.data.dto.ScheduleByDateDto
 import com.example.collegeschedule.data.dto.GroupDto
 import com.example.collegeschedule.data.network.RetrofitInstance
 import com.example.collegeschedule.utils.getWeekDateRange
-import com.example.collegeschedule.ui.schedule.ScheduleList
+import com.example.collegeschedule.ui.components.GroupDropdown
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import com.example.collegeschedule.data.local.FavoritesManager
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScheduleScreen() {
+fun ScheduleScreen(
+    // ДОБАВЛЯЕМ параметры
+    selectedGroup: GroupDto? = null,
+    onGroupSelected: (GroupDto) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
     var schedule by remember { mutableStateOf<List<ScheduleByDateDto>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var allGroups by remember { mutableStateOf<List<GroupDto>>(emptyList()) }
-    var selectedGroup by remember { mutableStateOf("") }
-    var searchText by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
 
-    // Загружаем список групп
+    // ДОБАВЛЯЕМ: внутреннее состояние для выбранной группы
+    var localSelectedGroup by remember { mutableStateOf<GroupDto?>(selectedGroup) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val favoriteGroups by FavoritesManager.favoriteGroups.collectAsState(emptySet())
+
+    // ОБНОВЛЯЕМ: следим за изменением selectedGroup извне
+    LaunchedEffect(selectedGroup) {
+        if (selectedGroup != null) {
+            localSelectedGroup = selectedGroup
+        }
+    }
+
+    // Загружаем список всех групп при запуске
     LaunchedEffect(Unit) {
+        isLoading = true
         try {
             allGroups = RetrofitInstance.api.getAllGroups()
         } catch (e: Exception) {
-            error = "Ошибка загрузки групп: ${e.message}"
+            errorMessage = "Ошибка загрузки групп: ${e.message}"
+        } finally {
+            isLoading = false
         }
     }
 
     // Загружаем расписание при выборе группы
-    LaunchedEffect(selectedGroup) {
-        if (selectedGroup.isNotBlank()) {
-            loading = true
-            error = null
+    LaunchedEffect(localSelectedGroup) {
+        if (localSelectedGroup != null) {
+            isLoading = true
+            errorMessage = null
             try {
-                val (start, end) = getWeekDateRange()
-                schedule = RetrofitInstance.api.getSchedule(selectedGroup, start, end)
+                val (startDate, endDate) = getWeekDateRange()
+                schedule = RetrofitInstance.api.getSchedule(
+                    groupName = localSelectedGroup!!.groupName,
+                    start = startDate,
+                    end = endDate
+                )
             } catch (e: Exception) {
-                error = "Ошибка загрузки расписания: ${e.message}"
+                errorMessage = "Ошибка загрузки расписания: ${e.message}"
             } finally {
-                loading = false
+                isLoading = false
             }
         }
     }
 
-    val filteredGroups = if (searchText.isEmpty()) {
-        allGroups
-    } else {
-        allGroups.filter { it.groupName.contains(searchText, ignoreCase = true) }
-    }
-
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Выпадающий список с группами
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded }
-        ) {
-            TextField(
-                value = searchText,
-                onValueChange = {
-                    searchText = it
-                    if (!expanded) expanded = true
-                },
-                label = { Text("Поиск группы") },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
+        GroupDropdown(
+            groups = allGroups,
+            // ИСПОЛЬЗУЕМ localSelectedGroup
+            selectedGroup = localSelectedGroup,
+            onGroupSelected = { group ->
+                // ОБНОВЛЯЕМ оба состояния
+                localSelectedGroup = group
+                onGroupSelected(group)
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
 
-            DropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.fillMaxWidth()
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Индикатор выбранной группы
+        if (localSelectedGroup != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
             ) {
-                if (filteredGroups.isEmpty()) {
-                    DropdownMenuItem(
-                        text = { Text("Группа не найдена") },
-                        onClick = { }
-                    )
-                } else {
-                    filteredGroups.forEach { group ->
-                        DropdownMenuItem(
-                            text = { Text(group.groupName) },
-                            onClick = {
-                                selectedGroup = group.groupName
-                                searchText = group.groupName
-                                expanded = false
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Выбрана группа: ${localSelectedGroup!!.groupName}",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Курс: ${localSelectedGroup!!.course}, ${localSelectedGroup!!.specialtyName}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    // Кнопка "Избранное"
+                    IconButton(
+                        onClick = {
+                            coroutineScope.launch {
+                                FavoritesManager.toggleFavoriteGroup(localSelectedGroup!!.groupName)
                             }
+                        }
+                    ) {
+                        val isFavorite = localSelectedGroup!!.groupName in favoriteGroups
+                        Icon(
+                            imageVector = if (isFavorite) Icons.Default.Star else Icons.Default.StarOutline,
+                            contentDescription = if (isFavorite) "Удалить из избранного" else "Добавить в избранное",
+                            tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                         )
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Показываем выбранную группу
-        if (selectedGroup.isNotBlank()) {
-            Text(
-                text = "Выбрана группа: $selectedGroup",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Отображение состояния
+        // Остальной код без изменений...
         when {
-            loading -> {
+            isLoading -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -123,30 +151,80 @@ fun ScheduleScreen() {
                     CircularProgressIndicator()
                 }
             }
-            error != null -> {
-                Text(
-                    text = "Ошибка: $error",
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
-            selectedGroup.isBlank() -> {
+
+            errorMessage != null -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Выберите группу из списка выше")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = "Ошибка",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = errorMessage!!,
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center
+                        )
+                    }
                 }
             }
+
+            localSelectedGroup == null -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Выбор группы",
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Выберите группу из списка выше",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+
             schedule.isEmpty() -> {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Расписание не найдено")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EventBusy,
+                            contentDescription = "Нет занятий",
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "На выбранную неделю занятий нет",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             }
+
             else -> {
-                // Добавляем скроллинг
                 ScheduleList(schedule)
             }
         }
